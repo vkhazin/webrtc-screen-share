@@ -37,7 +37,7 @@ The application is deployed as a containerized service on Google Cloud Run with 
    - Provide instructions for GitHub setup
 
 2. **GitHub Secrets**: Configure the following in your GitHub repository:
-   - `GCP_CREDENTIALS`: JSON key for your service account (from `.secret/gcp-github-actions-key.json`)
+   - `GOOGLE_CREDENTIALS`: JSON key for your service account (from `.secret/gcp-github-actions-key.json`)
 
 3. **GitHub Variables**: Configure the following repository variables:
    - `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID
@@ -92,7 +92,7 @@ gcloud run deploy ss \
 2. **Configure GitHub Repository**:
    - Go to your repository settings → Secrets and variables → Actions
    - Add the following secret:
-     - `GCP_CREDENTIALS`: Contents of the `.secret/gcp-github-actions-key.json` file
+     - `GOOGLE_CREDENTIALS`: Contents of the `.secret/gcp-github-actions-key.json` file
    - Add the following variables:
      - `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID
      - `REGION`: Your preferred region (e.g., `us-central1`)
@@ -177,7 +177,7 @@ gcloud run services describe ss --region=us-central1 --format="value(status.url)
    - Check that the PORT environment variable is being used correctly
 
 4. **GitHub Actions Failures**:
-   - Verify `GCP_CREDENTIALS` secret is valid JSON
+   - Verify `GOOGLE_CREDENTIALS` secret is valid JSON
    - Ensure repository variables are set correctly
    - Check service account permissions
 
