@@ -135,3 +135,8 @@ dist
 .yarn/install-state.gz
 .pnp.*
 .idea
+
+# Google Cloud credentials
+key.json
+service-account.json
+gcp-credentials.json

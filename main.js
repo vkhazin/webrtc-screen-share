@@ -78,4 +78,5 @@ app.get("/ip", (req, res) => {
     res.json({ ip: localIPv4Address });
 });
 
-main.listen(3000, () => console.log("Server running on http://localhost:3000"));
+const PORT = process.env.PORT || 3000;
+main.listen(PORT, () => console.log(`Server running on port ${PORT}`));
