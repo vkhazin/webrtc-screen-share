@@ -25,6 +25,7 @@ REQUIRED_FILES=(
     ".dockerignore"
     "cicd/gcp/deploy.sh"
     "cicd/gcp/validate-env.sh"
+    "cicd/gcp/create-gcp-sa.sh"
     "cicd/README.md"
     ".github/workflows/deploy-cloud-run.yml"
 )
@@ -45,6 +46,7 @@ echo "🔍 Checking script permissions..."
 EXECUTABLE_FILES=(
     "cicd/gcp/deploy.sh"
     "cicd/gcp/validate-env.sh"
+    "cicd/gcp/create-gcp-sa.sh"
 )
 
 for file in "${EXECUTABLE_FILES[@]}"; do
@@ -73,9 +75,26 @@ else
     exit 1
 fi
 
+# Validate GitHub Actions workflow for correct environment variables
+echo ""
+echo "🔍 Validating GitHub Actions workflow environment variables..."
+if grep -q "GOOGLE_CLOUD_PROJECT" .github/workflows/deploy-cloud-run.yml; then
+    echo "✅ GitHub Actions uses GOOGLE_CLOUD_PROJECT"
+else
+    echo "❌ GitHub Actions does not use GOOGLE_CLOUD_PROJECT"
+    exit 1
+fi
+
+if grep -q "vars.REGION" .github/workflows/deploy-cloud-run.yml; then
+    echo "✅ GitHub Actions uses REGION variable"
+else
+    echo "❌ GitHub Actions does not use REGION variable"
+    exit 1
+fi
+
 # Validate GitHub Actions workflow
 echo ""
-echo "🔍 Validating GitHub Actions workflow..."
+echo "🔍 Validating GitHub Actions workflow configuration..."
 if grep -q "SERVICE_NAME.*ss" .github/workflows/deploy-cloud-run.yml; then
     echo "✅ GitHub Actions uses correct service name 'ss'"
 else
@@ -94,6 +113,7 @@ echo ""
 echo "🎉 All checks passed! CICD setup is complete."
 echo ""
 echo "Next steps:"
-echo "1. Run: ./cicd/gcp/validate-env.sh"
-echo "2. Deploy: ./cicd/gcp/deploy.sh"
-echo "3. Or configure GitHub Actions as described in cicd/README.md"
+echo "1. Create service account: ./cicd/gcp/create-gcp-sa.sh"
+echo "2. Run environment validation: ./cicd/gcp/validate-env.sh"
+echo "3. Deploy locally: ./cicd/gcp/deploy.sh"
+echo "4. Or configure GitHub Actions as described in cicd/README.md"

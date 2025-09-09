@@ -140,3 +140,6 @@ dist
 key.json
 service-account.json
 gcp-credentials.json
+
+# Secret directory for service account keys
+.secret/

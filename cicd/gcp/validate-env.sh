@@ -33,7 +33,7 @@ PROJECT_ID=$(gcloud config get-value project 2>/dev/null || echo "")
 if [ -z "$PROJECT_ID" ]; then
     echo "❌ No default project set"
     echo "   Please run: gcloud config set project YOUR_PROJECT_ID"
-    echo "   Or set the GCP_PROJECT_ID environment variable"
+    echo "   Or set the GOOGLE_CLOUD_PROJECT environment variable"
     exit 1
 else
     echo "✅ Default project configured"
@@ -92,16 +92,16 @@ fi
 echo ""
 echo "🔍 Environment variables for deployment script..."
 
-if [ -n "${GCP_PROJECT_ID:-}" ]; then
-    echo "✅ GCP_PROJECT_ID is set: $GCP_PROJECT_ID"
+if [ -n "${GOOGLE_CLOUD_PROJECT:-}" ]; then
+    echo "✅ GOOGLE_CLOUD_PROJECT is set: $GOOGLE_CLOUD_PROJECT"
 else
-    echo "ℹ️  GCP_PROJECT_ID not set (will use default project: $PROJECT_ID)"
+    echo "ℹ️  GOOGLE_CLOUD_PROJECT not set (will use default project: $PROJECT_ID)"
 fi
 
-if [ -n "${GCP_REGION:-}" ]; then
-    echo "✅ GCP_REGION is set: $GCP_REGION"
+if [ -n "${REGION:-}" ]; then
+    echo "✅ REGION is set: $REGION"
 else
-    echo "ℹ️  GCP_REGION not set (will use default: us-central1)"
+    echo "ℹ️  REGION not set (will use default: us-central1)"
 fi
 
 echo ""
@@ -111,4 +111,4 @@ echo "To deploy the application:"
 echo "   ./cicd/gcp/deploy.sh"
 echo ""
 echo "Or with custom settings:"
-echo "   GCP_PROJECT_ID=your-project GCP_REGION=us-west1 ./cicd/gcp/deploy.sh"
+echo "   GOOGLE_CLOUD_PROJECT=your-project REGION=us-west1 ./cicd/gcp/deploy.sh"

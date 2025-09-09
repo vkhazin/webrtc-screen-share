@@ -24,18 +24,24 @@ The application is deployed as a containerized service on Google Cloud Run with 
 
 ### For GitHub Actions
 
-1. **Service Account**: Create a Google Cloud service account with the following roles:
-   - Cloud Run Admin
-   - Service Account User
-   - Storage Admin
-   - Artifact Registry Admin (if using Artifact Registry)
+1. **Service Account**: Use the automated script to create a service account:
+   ```bash
+   # Run the service account creation script
+   ./cicd/gcp/create-gcp-sa.sh
+   ```
+   
+   This script will:
+   - Create a service account with required permissions
+   - Generate a service account key 
+   - Save the key securely in `.secret/` directory
+   - Provide instructions for GitHub setup
 
 2. **GitHub Secrets**: Configure the following in your GitHub repository:
-   - `GCP_CREDENTIALS`: JSON key for your service account
+   - `GCP_CREDENTIALS`: JSON key for your service account (from `.secret/gcp-github-actions-key.json`)
 
 3. **GitHub Variables**: Configure the following repository variables:
-   - `GCP_PROJECT_ID`: Your Google Cloud project ID
-   - `GCP_REGION`: Target deployment region (e.g., `us-central1`)
+   - `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID
+   - `REGION`: Target deployment region (e.g., `us-central1`)
 
 ## Local Deployment
 
@@ -43,8 +49,8 @@ The application is deployed as a containerized service on Google Cloud Run with 
 
 ```bash
 # Set environment variables
-export GCP_PROJECT_ID="your-project-id"
-export GCP_REGION="us-central1"
+export GOOGLE_CLOUD_PROJECT="your-project-id"
+export REGION="us-central1"
 
 # Run deployment script
 ./cicd/gcp/deploy.sh
@@ -73,41 +79,23 @@ gcloud run deploy ss \
 ### Setup Steps
 
 1. **Create Service Account**:
+   Use the automated service account creation script:
    ```bash
-   # Create service account
-   gcloud iam service-accounts create github-actions-sa \
-     --display-name="GitHub Actions Service Account"
-
-   # Get the email
-   SA_EMAIL=$(gcloud iam service-accounts list \
-     --filter="displayName:GitHub Actions Service Account" \
-     --format="value(email)")
-
-   # Grant necessary roles
-   gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-     --member="serviceAccount:$SA_EMAIL" \
-     --role="roles/run.admin"
-
-   gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-     --member="serviceAccount:$SA_EMAIL" \
-     --role="roles/iam.serviceAccountUser"
-
-   gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-     --member="serviceAccount:$SA_EMAIL" \
-     --role="roles/storage.admin"
-
-   # Create and download key
-   gcloud iam service-accounts keys create key.json \
-     --iam-account=$SA_EMAIL
+   ./cicd/gcp/create-gcp-sa.sh
    ```
+   
+   This script will automatically:
+   - Create a service account with all required roles
+   - Generate and save the service account key to `.secret/gcp-github-actions-key.json`
+   - Display setup instructions for GitHub
 
 2. **Configure GitHub Repository**:
    - Go to your repository settings → Secrets and variables → Actions
    - Add the following secret:
-     - `GCP_CREDENTIALS`: Contents of the `key.json` file
+     - `GCP_CREDENTIALS`: Contents of the `.secret/gcp-github-actions-key.json` file
    - Add the following variables:
-     - `GCP_PROJECT_ID`: Your Google Cloud project ID
-     - `GCP_REGION`: Your preferred region (e.g., `us-central1`)
+     - `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID
+     - `REGION`: Your preferred region (e.g., `us-central1`)
 
 3. **Trigger Deployment**:
    - Push to `main` branch for automatic deployment

@@ -43,7 +43,7 @@ jobs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
       with:
-        project_id: ${{ vars.GCP_PROJECT_ID }}
+        project_id: ${{ vars.GOOGLE_CLOUD_PROJECT }}
 
     - name: Configure Docker to use gcloud as a credential helper
       run: gcloud auth configure-docker
@@ -52,7 +52,7 @@ jobs:
       run: |
         gcloud run deploy ${{ env.SERVICE_NAME }} \
           --source . \
-          --region=${{ vars.GCP_REGION }} \
+          --region=${{ vars.REGION }} \
           --platform=managed \
           --allow-unauthenticated \
           --port=8080 \
@@ -67,7 +67,7 @@ jobs:
       id: service-url
       run: |
         SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-          --region=${{ vars.GCP_REGION }} \
+          --region=${{ vars.REGION }} \
           --format="value(status.url)")
         echo "url=$SERVICE_URL" >> $GITHUB_OUTPUT
 
@@ -76,5 +76,5 @@ jobs:
         echo "🚀 Deployment completed successfully!"
         echo "📝 Service: ${{ env.SERVICE_NAME }}"
         echo "🌐 URL: ${{ steps.service-url.outputs.url }}"
-        echo "📍 Region: ${{ vars.GCP_REGION }}"
-        echo "📁 Project: ${{ vars.GCP_PROJECT_ID }}"
+        echo "📍 Region: ${{ vars.REGION }}"
+        echo "📁 Project: ${{ vars.GOOGLE_CLOUD_PROJECT }}"

@@ -11,13 +11,13 @@ DEFAULT_REGION="us-central1"
 DEFAULT_PROJECT_ID=""
 
 # Get values from environment variables or use defaults
-PROJECT_ID="${GCP_PROJECT_ID:-$DEFAULT_PROJECT_ID}"
-REGION="${GCP_REGION:-$DEFAULT_REGION}"
+PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-$DEFAULT_PROJECT_ID}"
+REGION="${REGION:-$DEFAULT_REGION}"
 
 # Validate required variables
 if [ -z "$PROJECT_ID" ]; then
-    echo "Error: GCP_PROJECT_ID environment variable must be set"
-    echo "Usage: GCP_PROJECT_ID=your-project-id GCP_REGION=us-central1 ./deploy.sh"
+    echo "Error: GOOGLE_CLOUD_PROJECT environment variable must be set"
+    echo "Usage: GOOGLE_CLOUD_PROJECT=your-project-id REGION=us-central1 ./deploy.sh"
     exit 1
 fi
 
