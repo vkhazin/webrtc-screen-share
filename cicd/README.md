@@ -1,6 +1,6 @@
-# CICD Setup for Google Cloud Run
+# Manual Deployment to Google Cloud Run
 
-This directory contains the continuous integration and deployment (CICD) configuration for deploying the webrtc-screen-share application to Google Cloud Run.
+This directory contains scripts for manually deploying the webrtc-screen-share application to Google Cloud Run.
 
 ## Overview
 
@@ -12,51 +12,44 @@ The application is deployed as a containerized service on Google Cloud Run with 
 
 ## Prerequisites
 
-### For Local Deployment
-
 1. **Google Cloud CLI**: Install and configure the [gcloud CLI](https://cloud.google.com/sdk/docs/install)
 2. **Authentication**: Run `gcloud auth login` to authenticate with your Google Cloud account
-3. **Docker**: Ensure Docker is installed (used by Cloud Run for building)
-4. **Required Permissions**: Your account needs the following IAM roles:
-   - Cloud Run Admin
-   - Service Account User
-   - Storage Admin (for container registry)
+3. **Project Owner Role**: Your account needs project owner permissions for the deployment script to configure Cloud Build service account permissions
+4. **Required APIs**: The deployment script will automatically enable required APIs
 
-### For GitHub Actions
+## Deployment
 
-1. **Service Account**: Use the automated script to create a service account:
-   ```bash
-   # Run the service account creation script
-   ./cicd/gcp/create-gcp-sa.sh
-   ```
-   
-   This script will:
-   - Create a service account with required permissions
-   - Generate a service account key 
-   - Save the key securely in `.secret/` directory
-   - Provide instructions for GitHub setup
+### Environment Setup
 
-2. **GitHub Secrets**: Configure the following in your GitHub repository:
-   - `GCP_CREDENTIALS`: JSON key for your service account (from `.secret/gcp-github-actions-key.json`)
-
-3. **GitHub Variables**: Configure the following repository variables:
-   - `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID
-   - `REGION`: Target deployment region (e.g., `us-central1`)
-
-## Local Deployment
-
-### Quick Deploy
+Before deploying, you must set the required environment variables:
 
 ```bash
-# Set environment variables
+# Set your Google Cloud project ID
 export GOOGLE_CLOUD_PROJECT="your-project-id"
-export REGION="us-central1"
 
-# Run deployment script
+# Set your preferred region
+export REGION="us-central1"
+```
+
+### Deploy to Cloud Run
+
+Run the deployment script:
+
+```bash
 ./cicd/gcp/deploy.sh
 ```
 
-### Manual Deployment
+The deployment script will:
+1. Validate that required environment variables are set
+2. Set the gcloud project configuration
+3. Configure Cloud Build service account permissions automatically
+4. Enable required Google Cloud APIs
+5. Build and deploy the application to Cloud Run
+6. Output the service URL for testing
+
+### Alternative Manual Deployment
+
+If you prefer to deploy manually without the script:
 
 ```bash
 # Set your project
@@ -65,6 +58,7 @@ gcloud config set project YOUR_PROJECT_ID
 # Deploy to Cloud Run
 gcloud run deploy ss \
   --source . \
+  --project=YOUR_PROJECT_ID \
   --region=us-central1 \
   --platform=managed \
   --allow-unauthenticated \
@@ -73,42 +67,6 @@ gcloud run deploy ss \
   --cpu=1 \
   --max-instances=10
 ```
-
-## GitHub Actions Deployment
-
-### Setup Steps
-
-1. **Create Service Account**:
-   Use the automated service account creation script:
-   ```bash
-   ./cicd/gcp/create-gcp-sa.sh
-   ```
-   
-   This script will automatically:
-   - Create a service account with all required roles
-   - Generate and save the service account key to `.secret/gcp-github-actions-key.json`
-   - Display setup instructions for GitHub
-
-2. **Configure GitHub Repository**:
-   - Go to your repository settings → Secrets and variables → Actions
-   - Add the following secret:
-     - `GCP_CREDENTIALS`: Contents of the `.secret/gcp-github-actions-key.json` file
-   - Add the following variables:
-     - `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID
-     - `REGION`: Your preferred region (e.g., `us-central1`)
-
-3. **Trigger Deployment**:
-   - Push to `main` branch for automatic deployment
-   - Or manually trigger via GitHub Actions tab
-
-### Workflow Features
-
-- **Automatic Deployment**: Triggers on push to main branch
-- **Manual Deployment**: Can be triggered manually with environment selection
-- **Dependency Caching**: npm dependencies are cached for faster builds
-- **Security**: Uses workload identity federation for secure authentication
-- **Monitoring**: Outputs deployment URL and status
-
 ## Configuration
 
 ### Service Configuration
@@ -130,8 +88,7 @@ The application automatically uses the following environment variables:
 ### Custom Configuration
 
 To modify the deployment configuration, edit:
-- **Local deployment**: `cicd/gcp/deploy.sh`
-- **GitHub Actions**: `.github/workflows/deploy-cloud-run.yml`
+- **Deployment script**: `cicd/gcp/deploy.sh`
 - **Container**: `Dockerfile`
 
 ## Monitoring and Logs
@@ -176,10 +133,9 @@ gcloud run services describe ss --region=us-central1 --format="value(status.url)
    - Verify `--allow-unauthenticated` flag is set
    - Check that the PORT environment variable is being used correctly
 
-4. **GitHub Actions Failures**:
-   - Verify `GCP_CREDENTIALS` secret is valid JSON
-   - Ensure repository variables are set correctly
-   - Check service account permissions
+4. **Environment Variables Not Set**:
+   - Ensure `GOOGLE_CLOUD_PROJECT` and `REGION` environment variables are exported
+   - Variables must be set in the same terminal session where you run the deploy script
 
 ### Useful Commands
 

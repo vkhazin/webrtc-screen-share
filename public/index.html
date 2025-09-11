@@ -6,7 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebRTC Screen Sharing</title>
     <style>
-        body, html {
+        body,
+        html {
             margin: 0;
             padding: 0;
             height: 100%;
@@ -53,146 +54,530 @@
             width: 100%;
             height: 100%;
         }
+
+        #controls {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
     </style>
 </head>
 
 <body>
-<div id="header">
-    <div id="status"></div><button id="fullscreen">Full screen</button>
-</div>
-<div id="main">
-    <div id="startMenu">
-        <button id="startShare">Start Sharing</button>
-        <button id="watchStream">Watch Stream</button>
+    <div id="header">
+        <div id="status"></div><button id="fullscreen">Full screen</button>
     </div>
-    <video id="video" autoplay playsinline></video>
-</div>
+    <div id="main">
+        <div id="startMenu">
+            <button id="startShare">Start Sharing</button>
+            <button id="watchStream">Watch Stream</button>
+        </div>
+        <video id="video" autoplay playsinline></video>
+        <div id="controls">
+            <button id="stopButton">Stop</button>
+        </div>
+    </div>
 
-<script src="https://cdn.socket.io/4.8.1/socket.io.min.js" integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+" crossorigin="anonymous"></script>
-<script>
-    const port = 3000;
-    const socket = io();
-    const peerConnections = {};
-    const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
+        integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
+        crossorigin="anonymous"></script>
+    <script>
+        const port = window.location.port || 3000;
+        const socket = io();
+        const peerConnections = {};
+        
+        // Multiple TURN server providers for better reliability
+        const allIceServers = [
+            // Google STUN servers
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "stun:stun2.l.google.com:19302" },
+            { urls: "stun:stun3.l.google.com:19302" },
+            { urls: "stun:stun4.l.google.com:19302" },
+            
+            // Additional public STUN servers
+            { urls: "stun:stun.stunprotocol.org:3478" },
+            { urls: "stun:stun.voiparound.com" },
+            { urls: "stun:stun.voipbuster.com" },
+            
+            // Multiple TURN server providers
+            // Metered.ca (free tier)
+            {
+                urls: "turn:openrelay.metered.ca:80",
+                username: "openrelayproject",
+                credential: "openrelayproject"
+            },
+            {
+                urls: "turn:openrelay.metered.ca:443",
+                username: "openrelayproject",
+                credential: "openrelayproject"
+            },
+            {
+                urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                username: "openrelayproject",
+                credential: "openrelayproject"
+            },
+            
+            // Twilio STUN (free)
+            { urls: "stun:global.stun.twilio.com:3478" },
+            
+            // Additional free TURN servers
+            {
+                urls: "turn:relay.backups.cz",
+                username: "webrtc",
+                credential: "webrtc"
+            },
+            {
+                urls: "turn:relay.backups.cz:443",
+                username: "webrtc",
+                credential: "webrtc"
+            },
+            {
+                urls: "turn:relay.backups.cz:443?transport=tcp",
+                username: "webrtc",
+                credential: "webrtc"
+            }
+        ];
 
-    const videoElement = document.getElementById("video");
-    const startShareButton = document.getElementById("startShare");
-    const watchStreamButton = document.getElementById("watchStream");
-    const fullscreenButton = document.getElementById("fullscreen");
-    const startMenu = document.getElementById("startMenu");
-    const statusElement = document.getElementById("status");
+        let workingIceServers = [...allIceServers];
+        
+        // Create base config that works locally even without TURN servers
+        const baseConfig = { 
+            iceServers: allIceServers.filter(server => server.urls.startsWith('stun:')),
+            iceCandidatePoolSize: 10,
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require'
+        };
 
-    async function getLocalIPv4() {
-        const response = await fetch("/ip");
-        const data = await response.json();
-        return data.ip;
-    }
+        const config = { 
+            iceServers: workingIceServers,
+            iceCandidatePoolSize: 10,
+            iceTransportPolicy: 'all',
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require'
+        };
 
-    async function handleStartSharing() {
-        try {
-            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            videoElement.srcObject = stream;
-
-            // Hide start menu and show video
-            startMenu.style.display = "none";
-            videoElement.style.display = "block";
-
-            const ip = await getLocalIPv4();
-            statusElement.innerText = `Sharing... Connect on another device using this IP: http://${ip}:${port}`;
-
-            socket.emit("broadcaster");
-
-            socket.on("watcher", (id) => {
-                const peerConnection = new RTCPeerConnection(config);
-                peerConnections[id] = peerConnection;
-
-                stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-
-                peerConnection.onicecandidate = event => {
-                    if (event.candidate) {
-                        socket.emit("candidate", id, event.candidate);
+        // TURN server connectivity testing
+        async function testTurnServer(server) {
+            return new Promise((resolve) => {
+                const pc = new RTCPeerConnection({ iceServers: [server] });
+                let hasRelay = false;
+                
+                const timeout = setTimeout(() => {
+                    pc.close();
+                    resolve(false);
+                }, 5000);
+                
+                pc.onicecandidate = (event) => {
+                    if (event.candidate && event.candidate.type === 'relay') {
+                        hasRelay = true;
+                        clearTimeout(timeout);
+                        pc.close();
+                        resolve(true);
                     }
                 };
+                
+                pc.onicegatheringstatechange = () => {
+                    if (pc.iceGatheringState === 'complete') {
+                        clearTimeout(timeout);
+                        pc.close();
+                        resolve(hasRelay);
+                    }
+                };
+                
+                // Create a dummy data channel to trigger ICE gathering
+                pc.createDataChannel('test');
+                pc.createOffer().then(offer => pc.setLocalDescription(offer));
+            });
+        }
 
-                peerConnection.createOffer().then(offer => {
-                    peerConnection.setLocalDescription(offer);
-                    socket.emit("offer", id, offer);
+        // Test all TURN servers and filter working ones
+        async function validateTurnServers() {
+            console.log('Testing TURN servers...');
+            const turnServers = allIceServers.filter(server => server.urls.startsWith('turn:'));
+            const stunServers = allIceServers.filter(server => server.urls.startsWith('stun:'));
+            
+            const workingTurnServers = [];
+            
+            for (const server of turnServers) {
+                console.log(`Testing TURN server: ${server.urls}`);
+                const isWorking = await testTurnServer(server);
+                if (isWorking) {
+                    console.log(`✓ TURN server working: ${server.urls}`);
+                    workingTurnServers.push(server);
+                } else {
+                    console.log(`✗ TURN server failed: ${server.urls}`);
+                }
+            }
+            
+            workingIceServers = [...stunServers, ...workingTurnServers];
+            config.iceServers = workingIceServers;
+            
+            console.log(`TURN server validation complete. Working servers: ${workingTurnServers.length}/${turnServers.length}`);
+            return workingTurnServers.length > 0;
+        }
+
+        // Add socket connection monitoring
+        socket.on('connect', () => {
+            console.log('Socket connected:', socket.id);
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log('Socket disconnected:', reason);
+        });
+
+        socket.on('error', (error) => {
+            console.error('Socket error:', error);
+        });
+
+        // Global listener for broadcaster-stopped (always active)
+        socket.on("broadcaster-stopped", () => {
+            console.log("Global: Broadcaster stopped sharing");
+            if (currentMode === 'watching') {
+                statusElement.innerText = "Broadcaster stopped sharing";
+                cleanupAndReset();
+            }
+        });
+
+        const videoElement = document.getElementById("video");
+        const startShareButton = document.getElementById("startShare");
+        const watchStreamButton = document.getElementById("watchStream");
+        const fullscreenButton = document.getElementById("fullscreen");
+        const startMenu = document.getElementById("startMenu");
+        const statusElement = document.getElementById("status");
+        const controlsElement = document.getElementById("controls");
+        const stopButton = document.getElementById("stopButton");
+
+        let currentStream = null;
+        let currentMode = null; // 'sharing' or 'watching'
+
+        async function getServerInfo() {
+            const response = await fetch("/ip");
+            const data = await response.json();
+            return data;
+        }
+
+        function resetToStartMenu() {
+            console.log("resetToStartMenu called, currentMode:", currentMode);
+
+            // If we're a broadcaster stopping, notify all viewers
+            if (currentMode === 'sharing') {
+                console.log("Broadcaster stopping - notifying viewers");
+                socket.emit("broadcaster-stopped");
+
+                // Give a small delay to ensure the event is sent before cleanup
+                setTimeout(() => {
+                    cleanupAndReset();
+                }, 100);
+            } else {
+                cleanupAndReset();
+            }
+        }
+
+        function cleanupAndReset() {
+            console.log("Cleaning up and resetting UI");
+
+            // Stop current stream if exists
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+
+            // Close all peer connections
+            Object.values(peerConnections).forEach(pc => pc.close());
+            Object.keys(peerConnections).forEach(key => delete peerConnections[key]);
+
+            // Remove all socket event listeners
+            socket.off("watcher");
+            socket.off("answer");
+            socket.off("candidate");
+            socket.off("broadcasterDisconnect");
+            socket.off("broadcaster-disconnect");
+            socket.off("broadcaster-stopped");
+            socket.off("offer");
+
+            // Reset UI
+            videoElement.srcObject = null;
+            videoElement.style.display = "none";
+            controlsElement.style.display = "none";
+            startMenu.style.display = "flex";
+            statusElement.innerText = "";
+            currentMode = null;
+
+            console.log("Reset to start menu completed");
+        }
+
+        function handleStop() {
+            console.log("Stop button clicked");
+            resetToStartMenu();
+        }
+
+        stopButton.onclick = handleStop;
+
+        async function handleStartSharing() {
+            try {
+                // Test TURN servers first
+                statusElement.innerText = "Testing connection servers...";
+                const hasTurnServers = await validateTurnServers();
+                
+                if (!hasTurnServers) {
+                    console.warn('No working TURN servers found - connections may fail across different networks');
+                    statusElement.innerText = "Warning: Limited connectivity - may not work across networks";
+                } else {
+                    statusElement.innerText = "Connection servers validated";
+                }
+
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                currentStream = stream;
+                currentMode = 'sharing';
+                videoElement.srcObject = stream;
+
+                // Hide start menu and show video with controls
+                startMenu.style.display = "none";
+                videoElement.style.display = "block";
+                controlsElement.style.display = "flex";
+
+                const serverInfo = await getServerInfo();
+                if (serverInfo.isCloudRun) {
+                    statusElement.innerText = `Sharing... Share this URL: ${serverInfo.serverUrl}`;
+                } else {
+                    statusElement.innerText = `Sharing... Connect on another device using: http://${serverInfo.ip}:${port}`;
+                }
+
+                // Listen for stream end (user stops sharing from browser)
+                stream.getTracks().forEach(track => {
+                    track.addEventListener('ended', () => {
+                        console.log('Stream track ended');
+                        resetToStartMenu();
+                    });
                 });
+
+                socket.emit("broadcaster");
+
+                socket.on("watcher", (id) => {
+                    console.log("New watcher connected:", id);
+                    const peerConnection = new RTCPeerConnection(config);
+                    peerConnections[id] = peerConnection;
+
+                    // Add comprehensive connection state monitoring for debugging
+                    peerConnection.onconnectionstatechange = () => {
+                        console.log(`Broadcaster connection state with ${id}:`, peerConnection.connectionState);
+                        if (peerConnection.connectionState === 'failed') {
+                            console.error(`Connection failed with viewer ${id}`);
+                            statusElement.innerText = `Connection failed with viewer ${id}`;
+                        }
+                    };
+
+                    peerConnection.oniceconnectionstatechange = () => {
+                        console.log(`Broadcaster ICE connection state with ${id}:`, peerConnection.iceConnectionState);
+                    };
+
+                    peerConnection.onicegatheringstatechange = () => {
+                        console.log(`Broadcaster ICE gathering state with ${id}:`, peerConnection.iceGatheringState);
+                    };
+
+                    stream.getTracks().forEach(track => {
+                        console.log("Adding track to peer connection:", track.kind);
+                        peerConnection.addTrack(track, stream);
+                    });
+
+                    peerConnection.onicecandidate = event => {
+                        if (event.candidate) {
+                            console.log(`Broadcaster sending ICE candidate to ${id}:`, {
+                                type: event.candidate.type,
+                                protocol: event.candidate.protocol,
+                                address: event.candidate.address,
+                                port: event.candidate.port,
+                                priority: event.candidate.priority
+                            });
+                            socket.emit("candidate", id, event.candidate);
+                        }
+                    };
+
+                    peerConnection.createOffer().then(offer => {
+                        console.log("Created offer for", id);
+                        return peerConnection.setLocalDescription(offer);
+                    }).then(() => {
+                        socket.emit("offer", id, peerConnection.localDescription);
+                    }).catch(error => {
+                        console.error("Error creating offer:", error);
+                    });
+                });
+
+                socket.on("answer", (id, answer) => {
+                    console.log("Received answer from", id);
+                    if (peerConnections[id]) {
+                        peerConnections[id].setRemoteDescription(new RTCSessionDescription(answer))
+                            .catch(error => console.error("Error setting remote description:", error));
+                    }
+                });
+
+                socket.on("candidate", (id, candidate) => {
+                    console.log("Received ICE candidate from", id);
+                    if (peerConnections[id]) {
+                        peerConnections[id].addIceCandidate(new RTCIceCandidate(candidate))
+                            .catch(error => console.error("Error adding ICE candidate:", error));
+                    }
+                });
+
+                socket.on("broadcasterDisconnect", (id) => {
+                    if (peerConnections[id]) {
+                        peerConnections[id].close();
+                        delete peerConnections[id];
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error starting sharing:", error);
+                resetToStartMenu();
+            }
+        }
+
+        async function handleWatchStream() {
+            currentMode = 'watching';
+            startMenu.style.display = "none";
+            videoElement.style.display = "block";
+            controlsElement.style.display = "flex";
+            statusElement.innerText = "Testing connection servers...";
+
+            // Test TURN servers first
+            const hasTurnServers = await validateTurnServers();
+            
+            if (!hasTurnServers) {
+                console.warn('No working TURN servers found - connections may fail across different networks');
+                statusElement.innerText = "Warning: Limited connectivity - may not work across networks";
+            } else {
+                statusElement.innerText = "Connection servers validated";
+            }
+
+            console.log("Requesting to watch stream...");
+            statusElement.innerText = "Connecting to broadcaster...";
+            socket.emit("watcher");
+
+            // Handle broadcaster disconnect
+            socket.on("broadcaster-disconnect", () => {
+                console.log("Broadcaster disconnected");
+                resetToStartMenu();
             });
 
-            socket.on("answer", (id, answer) => {
-                peerConnections[id].setRemoteDescription(new RTCSessionDescription(answer));
+            // Handle broadcaster stopped sharing
+            socket.on("broadcaster-stopped", () => {
+                console.log("Broadcaster stopped sharing");
+                statusElement.innerText = "Broadcaster stopped sharing";
+                resetToStartMenu();
             });
 
-            socket.on("candidate", (id, candidate) => {
-                peerConnections[id].addIceCandidate(new RTCIceCandidate(candidate));
-            });
+            socket.on("offer", async (id, offer) => {
+                console.log(`Received offer from broadcaster ${id}`);
+                try {
+                    // Create a new peer connection for this broadcaster
+                    const peerConnection = new RTCPeerConnection(config);
+                    peerConnections[id] = peerConnection;
 
-            socket.on("broadcasterDisconnect", (id) => {
-                if (peerConnections[id]) {
-                    peerConnections[id].close();
-                    delete peerConnections[id];
+                    // Add comprehensive connection state monitoring for debugging
+                    peerConnection.onconnectionstatechange = () => {
+                        console.log(`Viewer connection state with ${id}:`, peerConnection.connectionState);
+                        statusElement.innerText = `Connection: ${peerConnection.connectionState}`;
+                        if (peerConnection.connectionState === 'connected') {
+                            console.log('WebRTC connection established successfully!');
+                            statusElement.innerText = "Watching stream";
+                        } else if (peerConnection.connectionState === 'failed') {
+                            console.error('WebRTC connection failed');
+                            statusElement.innerText = "Connection failed - try refreshing";
+                        }
+                    };
+
+                    peerConnection.oniceconnectionstatechange = () => {
+                        console.log(`ICE connection state with ${id}:`, peerConnection.iceConnectionState);
+                    };
+
+                    peerConnection.onicegatheringstatechange = () => {
+                        console.log(`ICE gathering state with ${id}:`, peerConnection.iceGatheringState);
+                    };
+
+                    peerConnection.onicecandidate = event => {
+                        if (event.candidate) {
+                            console.log(`Viewer sending ICE candidate to broadcaster:`, {
+                                type: event.candidate.type,
+                                protocol: event.candidate.protocol,
+                                address: event.candidate.address,
+                                port: event.candidate.port,
+                                priority: event.candidate.priority
+                            });
+                            socket.emit("candidate", id, event.candidate);
+                        } else {
+                            console.log("ICE gathering completed");
+                        }
+                    };
+
+                    peerConnection.ontrack = event => {
+                        console.log("Receiving stream from broadcaster...");
+                        const stream = event.streams[0];
+                        currentStream = stream;
+                        videoElement.srcObject = stream;
+                        statusElement.innerText = "Watching stream";
+
+                        // Listen for stream end (broadcaster stops sharing)
+                        stream.getTracks().forEach(track => {
+                            track.addEventListener('ended', () => {
+                                console.log('Watch stream track ended');
+                                resetToStartMenu();
+                            });
+                        });
+                    };
+
+                    // Set remote description and create answer
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+                    console.log("Set remote description successfully");
+
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+                    console.log("Created and set local description (answer)");
+
+                    socket.emit("answer", id, answer);
+                    console.log("Sent answer to broadcaster");
+
+                } catch (error) {
+                    console.error("Error handling offer:", error);
+                    statusElement.innerText = "Error connecting - check console";
                 }
             });
 
-        } catch (error) {
-            console.error("Error starting sharing:", error);
+            socket.on("candidate", (id, candidate) => {
+                console.log("Received ICE candidate from broadcaster", id);
+                if (peerConnections[id]) {
+                    peerConnections[id].addIceCandidate(new RTCIceCandidate(candidate))
+                        .then(() => console.log("Added ICE candidate successfully"))
+                        .catch(error => console.error("Error adding ICE candidate:", error));
+                } else {
+                    console.warn("No peer connection found for broadcaster", id);
+                }
+            });
         }
-    }
 
-    function handleWatchStream() {
-        startMenu.style.display = "none";
-        videoElement.style.display = "block";
-        statusElement.innerText = "Loading...";
-
-        console.log("Requesting to watch stream...");
-        socket.emit("watcher");
-
-        const peerConnection = new RTCPeerConnection(config);
-        peerConnections["broadcaster"] = peerConnection;
-
-        peerConnection.onicecandidate = event => {
-            if (event.candidate) {
-                socket.emit("candidate", "broadcaster", event.candidate);
+        function handleFullScreen() {
+            if (videoElement.requestFullscreen) {
+                videoElement.requestFullscreen().catch(err => console.log("Full-screen request failed:", err));
+            } else if (videoElement.webkitRequestFullscreen) {
+                videoElement.webkitRequestFullscreen(); // Safari
+            } else if (videoElement.mozRequestFullScreen) {
+                videoElement.mozRequestFullScreen(); // Firefox
+            } else if (videoElement.msRequestFullscreen) {
+                videoElement.msRequestFullscreen(); // IE/Edge
             }
-        };
-
-        peerConnection.ontrack = event => {
-            console.log("Receiving stream from broadcaster...");
-            videoElement.srcObject = event.streams[0];
-            statusElement.innerText = "Watching stream";
-        };
-
-        socket.on("offer", async (id, offer) => {
-            console.log(`Received offer from ${id}`);
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            socket.emit("answer", id, answer);
-        });
-
-        socket.on("candidate", (id, candidate) => {
-            peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        });
-    }
-
-    function handleFullScreen() {
-        if (videoElement.requestFullscreen) {
-            videoElement.requestFullscreen().catch(err => console.log("Full-screen request failed:", err));
-        } else if (videoElement.webkitRequestFullscreen) {
-            videoElement.webkitRequestFullscreen(); // Safari
-        } else if (videoElement.mozRequestFullScreen) {
-            videoElement.mozRequestFullScreen(); // Firefox
-        } else if (videoElement.msRequestFullscreen) {
-            videoElement.msRequestFullscreen(); // IE/Edge
         }
-    }
 
-    startShareButton.onclick = handleStartSharing;
-    watchStreamButton.onclick = handleWatchStream;
-    fullscreenButton.onclick = handleFullScreen;
+        startShareButton.onclick = handleStartSharing;
+        watchStreamButton.onclick = handleWatchStream;
+        fullscreenButton.onclick = handleFullScreen;
 
-</script>
+    </script>
 </body>
 
 </html>

@@ -9,5 +9,4 @@ Dockerfile
 cicd
 dist
 build_and_zip.sh
-webpack.config.js
 *.md
