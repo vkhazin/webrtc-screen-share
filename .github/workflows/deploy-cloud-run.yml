@@ -1,0 +1,80 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+env:
+  SERVICE_NAME: ss
+
+jobs:
+  deploy:
+    name: Deploy to Google Cloud Run
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ vars.GOOGLE_CLOUD_PROJECT }}
+
+    - name: Configure Docker to use gcloud as a credential helper
+      run: gcloud auth configure-docker
+
+    - name: Deploy to Cloud Run
+      run: |
+        gcloud run deploy ${{ env.SERVICE_NAME }} \
+          --source . \
+          --region=${{ vars.REGION }} \
+          --platform=managed \
+          --allow-unauthenticated \
+          --port=8080 \
+          --memory=512Mi \
+          --cpu=1 \
+          --max-instances=10 \
+          --timeout=3600 \
+          --set-env-vars="NODE_ENV=production" \
+          --quiet
+
+    - name: Get service URL
+      id: service-url
+      run: |
+        SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+          --region=${{ vars.REGION }} \
+          --format="value(status.url)")
+        echo "url=$SERVICE_URL" >> $GITHUB_OUTPUT
+
+    - name: Output deployment info
+      run: |
+        echo "🚀 Deployment completed successfully!"
+        echo "📝 Service: ${{ env.SERVICE_NAME }}"
+        echo "🌐 URL: ${{ steps.service-url.outputs.url }}"
+        echo "📍 Region: ${{ vars.REGION }}"
+        echo "📁 Project: ${{ vars.GOOGLE_CLOUD_PROJECT }}"

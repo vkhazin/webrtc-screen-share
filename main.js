@@ -12,23 +12,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let broadcasters = {}; // Store broadcaster peer connections
 
-// Helper function to get local IPv4 address
-function getLocalIPv4Address() {
-    const networkInterfaces = os.networkInterfaces();
-    let localIPv4Address = null;
-
-    for (const interfaceName in networkInterfaces) {
-        const networkInterface = networkInterfaces[interfaceName];
-        for (const alias of networkInterface) {
-            if (alias.family === "IPv4" && !alias.internal) {
-                localIPv4Address = alias.address;
-                break;
-            }
-        }
-        if (localIPv4Address) break;
-    }
-
-    return localIPv4Address;
+// Helper function to get server address (works better in Cloud Run)
+function getServerAddress(req) {
+    // In Cloud Run, use the request headers to determine the external URL
+    const host = req.get('host');
+    const protocol = req.get('x-forwarded-proto') || 'https';
+    return `${protocol}://${host}`;
 }
 
 io.on("connection", (socket) => {
@@ -64,6 +53,13 @@ io.on("connection", (socket) => {
         io.to(id).emit("candidate", socket.id, candidate);
     });
 
+    // Handle broadcaster stopped sharing
+    socket.on("broadcaster-stopped", () => {
+        console.log("Broadcaster stopped sharing:", socket.id);
+        delete broadcasters[socket.id];
+        socket.broadcast.emit("broadcaster-stopped");
+    });
+
     // Handle disconnect event
     socket.on("disconnect", () => {
         console.log("Client disconnected:", socket.id);
@@ -72,10 +68,21 @@ io.on("connection", (socket) => {
     });
 });
 
-// New route to return client's IP address
+// Route to return server URL (better for Cloud Run)
 app.get("/ip", (req, res) => {
-    const localIPv4Address = getLocalIPv4Address();
-    res.json({ ip: localIPv4Address });
+    // For Cloud Run, return the service URL instead of local IP
+    const serverUrl = getServerAddress(req);
+    const host = req.get('host');
+    
+    // Extract just the hostname for display
+    const hostname = host ? host.split(':')[0] : 'localhost';
+    
+    res.json({ 
+        ip: hostname,
+        serverUrl: serverUrl,
+        isCloudRun: !!req.get('x-cloud-trace-context') // Cloud Run specific header
+    });
 });
 
-main.listen(3000, () => console.log("Server running on http://localhost:3000"));
+const PORT = process.env.PORT || 3000;
+main.listen(PORT, () => console.log(`Server running on port ${PORT}`));
